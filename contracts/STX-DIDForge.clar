@@ -141,3 +141,88 @@
     (err ERR-IDENTITY-NOT-FOUND)
   )
 )
+
+;; Checks if a user's entire identity is verified
+;; @param user - User's blockchain address
+;; @returns Boolean verification status or error
+(define-read-only (is-identity-verified (user principal))
+  (match (map-get? user-identities user)
+    identity (ok (get verification-status identity))
+    (err ERR-IDENTITY-NOT-FOUND)
+  )
+)
+
+;; Returns the total number of identities created in this contract
+;; @returns Total identity count
+(define-read-only (get-identity-count)
+  (ok (var-get identity-count))
+)
+;; Verifies a specific claim for a user (only callable by contract owner)
+;; @param user - User's blockchain address
+;; @param claim - Specific claim to verify
+(define-public (verify-claim (user principal) (claim (string-ascii 200)))
+  (begin
+    ;; Ensure only contract owner can verify claims
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
+
+    ;; Validate user and claim
+    (asserts! (is-some (map-get? user-identities user)) ERR-INVALID-USER)
+    (asserts! (> (len claim) u0) ERR-INVALID-CLAIM)
+    (asserts! (<= (len claim) u200) ERR-INVALID-CLAIM)
+
+    ;; Mark claim as verified
+    (map-set verified-claims 
+      { user: user, claim: claim } 
+      true
+    )
+    (ok true)
+  )
+)
+
+;; Sets the overall verification status for a user (only callable by contract owner)
+;; @param user - User's blockchain address
+;; @param status - Verification status to set
+(define-public (set-verification-status (user principal) (status bool))
+  (begin
+    ;; Ensure only contract owner can set verification status
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
+
+    ;; Validate user exists
+    (asserts! (is-some (map-get? user-identities user)) ERR-INVALID-USER)
+
+    (let
+      (
+        ;; Retrieve current identity
+        (current-identity (unwrap-panic (map-get? user-identities user)))
+      )
+      ;; Update verification status
+      (map-set user-identities 
+        user 
+        (merge current-identity 
+          { 
+            verification-status: status,
+            updated-at: block-height 
+          }
+        )
+      )
+      (ok true)
+    )
+  )
+)
+
+;; Checks if a specific claim is verified for a user
+;; @param user - User's blockchain address
+;; @param claim - Specific claim to check
+;; @returns Boolean indicating claim verification status
+(define-read-only (is-claim-verified (user principal) (claim (string-ascii 200)))
+  (default-to false 
+    (map-get? verified-claims { user: user, claim: claim })
+  )
+)
+
+;; Retrieves the full identity information for a user
+;; @param user - User's blockchain address
+;; @returns Optional identity information
+(define-read-only (get-identity (user principal))
+  (map-get? user-identities user)
+)
